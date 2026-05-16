@@ -38,11 +38,17 @@ if not hasattr(_hfhub, "HfFolder"):
 import gradio as gr
 
 # Patch Gradio's OAuth setup to be non-fatal.
-# huggingface_hub>=0.30 removed APIs that gradio[oauth]==5.0.0 uses at runtime,
-# causing attach_oauth() to raise an exception that blocks ALL API route
-# registration — producing "No API found" in the frontend.
+# huggingface_hub>=0.30 removed APIs that gradio[oauth]==5.0.0 uses at runtime.
+# attach_oauth() raises an exception that blocks ALL API route registration,
+# producing "No API found" in the frontend.
+#
+# Critical: gradio/routes.py does `from gradio.oauth import attach_oauth` which
+# creates a local binding — patching gradio.oauth alone won't intercept the call.
+# We must also patch gradio.routes.attach_oauth directly.
 try:
     import gradio.oauth as _go
+    import gradio.routes as _gr
+
     _orig_attach = getattr(_go, "attach_oauth", None)
     if _orig_attach:
         def _safe_attach_oauth(app):
@@ -53,6 +59,9 @@ try:
                     "[MARA] OAuth setup skipped (huggingface_hub compat): %s", _e
                 )
         _go.attach_oauth = _safe_attach_oauth
+        # Patch the already-imported reference inside gradio.routes
+        if hasattr(_gr, "attach_oauth"):
+            _gr.attach_oauth = _safe_attach_oauth
 except Exception:
     pass
 
