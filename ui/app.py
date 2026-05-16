@@ -617,11 +617,10 @@ def build_app() -> gr.Blocks:
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
-    app = build_app()
-    app.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        show_error=True,
-        share=False,            # set True to get a temporary public URL for testing
-    )
+app = build_app()
+app.queue().launch(
+    server_name="0.0.0.0",
+    server_port=7860,
+    show_error=True,
+    share=False,
+)
