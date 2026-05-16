@@ -472,7 +472,6 @@ def build_app() -> gr.Blocks:
                     datatype=["str", "str", "str", "str"],
                     value=[],
                     interactive=False,
-                    wrap=True,
                     elem_classes=["history-table"],
                 )
 
@@ -553,7 +552,7 @@ def build_app() -> gr.Blocks:
             fn=run_research_gradio,
             inputs=[query_input, history_state],
             outputs=generator_outputs,
-            show_progress="hidden",
+            show_progress=False,
         )
 
         # Also trigger on Enter key in the textbox
@@ -561,7 +560,7 @@ def build_app() -> gr.Blocks:
             fn=run_research_gradio,
             inputs=[query_input, history_state],
             outputs=generator_outputs,
-            show_progress="hidden",
+            show_progress=False,
         )
 
         # Sync history state to the visible table
