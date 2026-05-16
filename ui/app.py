@@ -14,9 +14,28 @@ import os
 import sys
 import time
 import logging
-import gradio as gr
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Shim: newer huggingface_hub removed HfFolder, but some gradio builds still
+# import it. Inject a minimal stand-in before gradio is loaded so the import
+# resolves without error.
+import huggingface_hub as _hfhub
+if not hasattr(_hfhub, "HfFolder"):
+    class _HfFolder:
+        @staticmethod
+        def get_token():
+            try:
+                return _hfhub.get_token()
+            except Exception:
+                return None
+        @staticmethod
+        def save_token(token): pass
+        @staticmethod
+        def delete_token(): pass
+    _hfhub.HfFolder = _HfFolder
+
+import gradio as gr
 
 from core.graph import run_research_stream
 from core.config import PRIMARY_MODEL, FALLBACK_MODEL
