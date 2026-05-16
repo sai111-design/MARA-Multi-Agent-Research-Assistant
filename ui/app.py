@@ -38,7 +38,7 @@ if not hasattr(_hfhub, "HfFolder"):
 import gradio as gr
 
 from core.graph import run_research_stream
-from core.config import PRIMARY_MODEL, FALLBACK_MODEL
+from core.config import PRIMARY_MODEL, FALLBACK_MODEL, GROQ_API_KEY, TAVILY_API_KEY, GOOGLE_API_KEY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -443,6 +443,44 @@ def build_app() -> gr.Blocks:
           </div>
         </div>
         """)
+
+        # ── API key warnings ──────────────────────────────────────────────────
+        missing_keys = []
+        if not GROQ_API_KEY:
+            missing_keys.append(
+                "<b>GROQ_API_KEY</b> — required for the LLM pipeline "
+                "(<a href='https://console.groq.com/keys' target='_blank' style='color:#67e8f9'>get one free at console.groq.com</a>)"
+            )
+        if not TAVILY_API_KEY:
+            missing_keys.append(
+                "<b>TAVILY_API_KEY</b> — optional, enables deep web search "
+                "(<a href='https://app.tavily.com' target='_blank' style='color:#67e8f9'>app.tavily.com</a>); "
+                "falls back to DuckDuckGo automatically"
+            )
+        if not GOOGLE_API_KEY:
+            missing_keys.append(
+                "<b>GOOGLE_API_KEY</b> — optional, enables Gemini fallback LLM "
+                "(<a href='https://aistudio.google.com/app/apikey' target='_blank' style='color:#67e8f9'>aistudio.google.com</a>)"
+            )
+
+        if missing_keys:
+            items_html = "".join(f"<li style='margin:0.3rem 0'>{k}</li>" for k in missing_keys)
+            severity = "error" if not GROQ_API_KEY else "warning"
+            border_color = "#f87171" if severity == "error" else "#fbbf24"
+            gr.HTML(f"""
+            <div style="background:#1e2130;border:1px solid {border_color};border-radius:10px;
+                        padding:1rem 1.4rem;margin-bottom:0.5rem;font-size:0.9rem;color:#e2e8f0;">
+              <strong style="color:{border_color}">
+                {"❌ Required API key missing — queries will fail" if severity == "error"
+                 else "⚠️ Optional keys not set"}
+              </strong>
+              <ul style="margin:0.5rem 0 0 1rem;padding:0">{items_html}</ul>
+              <p style="margin:0.6rem 0 0;color:#94a3b8;font-size:0.82rem;">
+                Add secrets in your Space →
+                <b>Settings → Repository secrets</b>, then restart the Space.
+              </p>
+            </div>
+            """)
 
         # ── Main layout: left sidebar + right content ─────────────────────────
         with gr.Row(equal_height=False):
