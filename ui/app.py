@@ -37,6 +37,25 @@ if not hasattr(_hfhub, "HfFolder"):
 
 import gradio as gr
 
+# Patch Gradio's OAuth setup to be non-fatal.
+# huggingface_hub>=0.30 removed APIs that gradio[oauth]==5.0.0 uses at runtime,
+# causing attach_oauth() to raise an exception that blocks ALL API route
+# registration — producing "No API found" in the frontend.
+try:
+    import gradio.oauth as _go
+    _orig_attach = getattr(_go, "attach_oauth", None)
+    if _orig_attach:
+        def _safe_attach_oauth(app):
+            try:
+                _orig_attach(app)
+            except Exception as _e:
+                logging.getLogger(__name__).warning(
+                    "[MARA] OAuth setup skipped (huggingface_hub compat): %s", _e
+                )
+        _go.attach_oauth = _safe_attach_oauth
+except Exception:
+    pass
+
 from core.graph import run_research_stream
 from core.config import PRIMARY_MODEL, FALLBACK_MODEL, GROQ_API_KEY, TAVILY_API_KEY, GOOGLE_API_KEY
 
@@ -674,7 +693,7 @@ def build_app() -> gr.Blocks:
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 
 app = build_app()
-app.queue().launch(
+app.launch(
     server_name="0.0.0.0",
     server_port=7860,
     show_error=True,
