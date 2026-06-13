@@ -13,3 +13,5 @@ build/
 .streamlit/
 .qdrant_storage/
 venv/
+.claude/
+.vibe-audits/
