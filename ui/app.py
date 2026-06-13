@@ -14,12 +14,59 @@ import os
 import sys
 import time
 import logging
-import gradio as gr
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# Shim: newer huggingface_hub removed HfFolder, but some gradio builds still
+# import it. Inject a minimal stand-in before gradio is loaded so the import
+# resolves without error.
+import huggingface_hub as _hfhub
+if not hasattr(_hfhub, "HfFolder"):
+    class _HfFolder:
+        @staticmethod
+        def get_token():
+            try:
+                return _hfhub.get_token()
+            except Exception:
+                return None
+        @staticmethod
+        def save_token(token): pass
+        @staticmethod
+        def delete_token(): pass
+    _hfhub.HfFolder = _HfFolder
+
+import gradio as gr
+
+# Patch Gradio's OAuth setup to be non-fatal.
+# huggingface_hub>=0.30 removed APIs that gradio[oauth]==5.0.0 uses at runtime.
+# attach_oauth() raises an exception that blocks ALL API route registration,
+# producing "No API found" in the frontend.
+#
+# Critical: gradio/routes.py does `from gradio.oauth import attach_oauth` which
+# creates a local binding — patching gradio.oauth alone won't intercept the call.
+# We must also patch gradio.routes.attach_oauth directly.
+try:
+    import gradio.oauth as _go
+    import gradio.routes as _gr
+
+    _orig_attach = getattr(_go, "attach_oauth", None)
+    if _orig_attach:
+        def _safe_attach_oauth(app):
+            try:
+                _orig_attach(app)
+            except Exception as _e:
+                logging.getLogger(__name__).warning(
+                    "[MARA] OAuth setup skipped (huggingface_hub compat): %s", _e
+                )
+        _go.attach_oauth = _safe_attach_oauth
+        # Patch the already-imported reference inside gradio.routes
+        if hasattr(_gr, "attach_oauth"):
+            _gr.attach_oauth = _safe_attach_oauth
+except Exception:
+    pass
+
 from core.graph import run_research_stream
-from core.config import PRIMARY_MODEL, FALLBACK_MODEL
+from core.config import PRIMARY_MODEL, FALLBACK_MODEL, GROQ_API_KEY, TAVILY_API_KEY, GOOGLE_API_KEY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -425,6 +472,44 @@ def build_app() -> gr.Blocks:
         </div>
         """)
 
+        # ── API key warnings ──────────────────────────────────────────────────
+        missing_keys = []
+        if not GROQ_API_KEY:
+            missing_keys.append(
+                "<b>GROQ_API_KEY</b> — required for the LLM pipeline "
+                "(<a href='https://console.groq.com/keys' target='_blank' style='color:#67e8f9'>get one free at console.groq.com</a>)"
+            )
+        if not TAVILY_API_KEY:
+            missing_keys.append(
+                "<b>TAVILY_API_KEY</b> — optional, enables deep web search "
+                "(<a href='https://app.tavily.com' target='_blank' style='color:#67e8f9'>app.tavily.com</a>); "
+                "falls back to DuckDuckGo automatically"
+            )
+        if not GOOGLE_API_KEY:
+            missing_keys.append(
+                "<b>GOOGLE_API_KEY</b> — optional, enables Gemini fallback LLM "
+                "(<a href='https://aistudio.google.com/app/apikey' target='_blank' style='color:#67e8f9'>aistudio.google.com</a>)"
+            )
+
+        if missing_keys:
+            items_html = "".join(f"<li style='margin:0.3rem 0'>{k}</li>" for k in missing_keys)
+            severity = "error" if not GROQ_API_KEY else "warning"
+            border_color = "#f87171" if severity == "error" else "#fbbf24"
+            gr.HTML(f"""
+            <div style="background:#1e2130;border:1px solid {border_color};border-radius:10px;
+                        padding:1rem 1.4rem;margin-bottom:0.5rem;font-size:0.9rem;color:#e2e8f0;">
+              <strong style="color:{border_color}">
+                {"❌ Required API key missing — queries will fail" if severity == "error"
+                 else "⚠️ Optional keys not set"}
+              </strong>
+              <ul style="margin:0.5rem 0 0 1rem;padding:0">{items_html}</ul>
+              <p style="margin:0.6rem 0 0;color:#94a3b8;font-size:0.82rem;">
+                Add secrets in your Space →
+                <b>Settings → Repository secrets</b>, then restart the Space.
+              </p>
+            </div>
+            """)
+
         # ── Main layout: left sidebar + right content ─────────────────────────
         with gr.Row(equal_height=False):
 
@@ -453,7 +538,6 @@ def build_app() -> gr.Blocks:
                     datatype=["str", "str", "str", "str"],
                     value=[],
                     interactive=False,
-                    wrap=True,
                     elem_classes=["history-table"],
                 )
 
@@ -534,7 +618,7 @@ def build_app() -> gr.Blocks:
             fn=run_research_gradio,
             inputs=[query_input, history_state],
             outputs=generator_outputs,
-            show_progress="hidden",
+            show_progress=False,
         )
 
         # Also trigger on Enter key in the textbox
@@ -542,7 +626,7 @@ def build_app() -> gr.Blocks:
             fn=run_research_gradio,
             inputs=[query_input, history_state],
             outputs=generator_outputs,
-            show_progress="hidden",
+            show_progress=False,
         )
 
         # Sync history state to the visible table
@@ -617,11 +701,10 @@ def build_app() -> gr.Blocks:
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
-    app = build_app()
-    app.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        show_error=True,
-        share=False,            # set True to get a temporary public URL for testing
-    )
+app = build_app()
+app.launch(
+    server_name="0.0.0.0",
+    server_port=7860,
+    show_error=True,
+    share=False,
+)
